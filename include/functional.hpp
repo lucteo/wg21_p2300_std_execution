@@ -38,12 +38,26 @@ namespace std {
           return tag_invoke((Tag&&) tag, (Args&&) args...);
         }
       };
-    }
+
+      template <class>
+        void __tag_category();
+
+      template <class Tag>
+        typename Tag::tag_category __tag_category() requires true;
+    } // namespace __impl
+
     inline constexpr struct tag_invoke_t : __impl::tag_invoke_t {} tag_invoke {};
   }
 
   template<auto& Tag>
   using tag_t = decay_t<decltype(Tag)>;
+
+  template<class Tag>
+  using tag_category_t = decltype(__impl::__tag_category<Tag>());
+
+  template<class Tag, class... Categories>
+  concept tag_category_one_of =
+    (derived_from<tag_category_t<Tag>, Categories> ||...);
 
   // TODO: Don't require tag_invocable to subsume invocable.
   // std::invoke is more expensive at compile time than necessary.

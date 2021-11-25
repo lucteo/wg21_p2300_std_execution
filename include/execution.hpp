@@ -240,6 +240,8 @@ namespace std::execution {
 
   // [execution.receivers.queries], receiver queries
   inline namespace __receiver_queries {
+    struct receiver_query_tag {};
+
     namespace __impl {
       template <class T>
         using __cref_t = const remove_reference_t<T>&;
@@ -249,6 +251,7 @@ namespace std::execution {
         concept __allocator = true;
 
       struct get_scheduler_t {
+        using tag_category = receiver_query_tag;
         template <receiver R>
           requires nothrow_tag_invocable<get_scheduler_t, __cref_t<R>> &&
             scheduler<tag_invoke_result_t<get_scheduler_t, __cref_t<R>>>
@@ -259,6 +262,7 @@ namespace std::execution {
       };
 
       struct get_allocator_t {
+        using tag_category = receiver_query_tag;
         template <receiver R>
           requires nothrow_tag_invocable<get_allocator_t, __cref_t<R>> &&
             __allocator<tag_invoke_result_t<get_allocator_t, __cref_t<R>>>
@@ -269,6 +273,7 @@ namespace std::execution {
       };
 
       struct get_stop_token_t {
+        using tag_category = receiver_query_tag;
         template <receiver R>
           requires tag_invocable<get_stop_token_t, __cref_t<R>> &&
             stoppable_token<tag_invoke_result_t<get_stop_token_t, __cref_t<R>>>
@@ -280,14 +285,15 @@ namespace std::execution {
           return {};
         }
       };
-    }
+    } // namespace __impl
+
     using __impl::get_allocator_t;
     using __impl::get_scheduler_t;
     using __impl::get_stop_token_t;
     inline constexpr get_scheduler_t get_scheduler{};
     inline constexpr get_allocator_t get_allocator{};
     inline constexpr get_stop_token_t get_stop_token{};
-  }
+  } // namespace __receiver_queries
 
   template <class R>
     using stop_token_of_t =
@@ -526,23 +532,31 @@ namespace std::execution {
 
   /////////////////////////////////////////////////////////////////////////////
   // [execution.senders.queries], sender queries
-  template<__one_of<set_value_t, set_error_t, set_done_t> CPO>
-    struct get_completion_scheduler_t {
-      template <sender S>
-        requires tag_invocable<get_completion_scheduler_t, const S&> &&
-          scheduler<tag_invoke_result_t<get_completion_scheduler_t, const S&>>
-      auto operator()(const S& s) const noexcept
-          -> tag_invoke_result_t<get_completion_scheduler_t, const S&> {
-        // NOT TO SPEC:
-        static_assert(
-          nothrow_tag_invocable<get_completion_scheduler_t, const S&>,
-          "get_completion_scheduler<CPO> should be noexcept");
-        return tag_invoke(*this, s);
-      }
-    };
+  inline namespace __sender_queries {
+    struct sender_query_tag {};
 
-  template<__one_of<set_value_t, set_error_t, set_done_t> CPO>
-    inline constexpr get_completion_scheduler_t<CPO> get_completion_scheduler{};
+    namespace __impl {
+      template<__one_of<set_value_t, set_error_t, set_done_t> CPO>
+        struct get_completion_scheduler_t {
+          using tag_category = sender_query_tag;
+          template <sender S>
+            requires tag_invocable<get_completion_scheduler_t, const S&> &&
+              scheduler<tag_invoke_result_t<get_completion_scheduler_t, const S&>>
+          auto operator()(const S& s) const noexcept
+              -> tag_invoke_result_t<get_completion_scheduler_t, const S&> {
+            // NOT TO SPEC:
+            static_assert(
+              nothrow_tag_invocable<get_completion_scheduler_t, const S&>,
+              "get_completion_scheduler<CPO> should be noexcept");
+            return tag_invoke(*this, s);
+          }
+        };
+    } // namespace __impl
+
+    using __impl::get_completion_scheduler_t;
+    template<__one_of<set_value_t, set_error_t, set_done_t> CPO>
+      inline constexpr get_completion_scheduler_t<CPO> get_completion_scheduler{};
+  } // namespace __sender_queries
 
   template <class S, class CPO>
     concept __has_completion_scheduler =
@@ -1083,6 +1097,13 @@ namespace std::execution {
             return ((Self&&) self).connect((R&&) r);
           }
 
+          template <tag_category_one_of<sender_query_tag> Tag, class... Args>
+            requires invocable<Tag, const Base&, Args...>
+          friend auto tag_invoke(Tag tag, const __t& self, Args&&... args)
+            noexcept(is_nothrow_invocable_v<Tag, const Base&, Args...>)
+            -> invoke_result_t<Tag, const Base&, Args...> {
+            return ((Tag&&) tag)(self.base(), (Args&&) args...);
+          }
         protected:
           using __adaptor_base<Base>::base;
 
@@ -1163,7 +1184,7 @@ namespace std::execution {
             }
           }
 
-          template <__none_of<set_value_t, set_error_t, set_done_t> Tag, class D = Derived, class... As>
+          template <tag_category_one_of<receiver_query_tag> Tag, class D = Derived, class... As>
             requires invocable<Tag, __base_t<const D&>, As...>
           friend auto tag_invoke(Tag tag, const Derived& self, As&&... as)
             noexcept(is_nothrow_invocable_v<Tag, __base_t<const D&>, As...>)
@@ -1702,7 +1723,7 @@ namespace std::execution {
                   Tag{}((Receiver&&) self.__op_->__rec_, (Args&&) args...);
                 }
 
-                template <__none_of<set_value_t, set_error_t, set_done_t> Tag, class... Args>
+                template <tag_category_one_of<receiver_query_tag> Tag, class... Args>
                 friend auto tag_invoke(Tag tag, const __receiver2& self, Args&&... args)
                   noexcept(is_nothrow_invocable_v<Tag, const Receiver&, Args...>)
                   -> invoke_result_t<Tag, const Receiver&, Args...> {
@@ -1739,7 +1760,7 @@ namespace std::execution {
                   set_error((Receiver&&) self.__op_->__rec_, current_exception());
                 }
 
-                template <__none_of<set_value_t, set_error_t, set_done_t> Tag, class... Args>
+                template <tag_category_one_of<receiver_query_tag> Tag, class... Args>
                 friend auto tag_invoke(Tag tag, const __receiver1& self, Args&&... args)
                   noexcept(is_nothrow_invocable_v<Tag, const Receiver&, Args...>)
                   -> invoke_result_t<Tag, const Receiver&, Args...> {
